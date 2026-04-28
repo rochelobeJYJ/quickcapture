@@ -134,6 +134,8 @@ class CaptureApp(QMainWindow):
     def init_ui(self):
         self.setWindowTitle("QuickCapture Pro")
         self.setFixedSize(450, 480)
+        # 설정창이 오버레이(크롭 영역)보다 항상 위에 표시되도록 함
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowStaysOnTopHint)
         
         font_family = "'Pretendard', 'Malgun Gothic', sans-serif"
         
@@ -238,6 +240,12 @@ class CaptureApp(QMainWindow):
         self.count_label.setStyleSheet("color: #0078d4; font-weight: bold;")
         stat_layout.addWidget(self.count_label)
         
+        reset_btn = QPushButton("초기화")
+        reset_btn.setObjectName("light_btn")
+        reset_btn.setToolTip("세션 캡처 횟수를 0으로 초기화")
+        reset_btn.clicked.connect(self.reset_session)
+        stat_layout.addWidget(reset_btn)
+        
         open_folder_btn = QPushButton("저장 폴더 열기")
         open_folder_btn.setObjectName("light_btn")
         open_folder_btn.clicked.connect(self.open_saved_folder)
@@ -254,6 +262,11 @@ class CaptureApp(QMainWindow):
 
     def update_count_ui(self, val):
         self.count_label.setText(f"현재 세션 캡처: {val}장")
+
+    def reset_session(self):
+        with self._count_lock:
+            self.session_count = 0
+        self.count_label.setText("현재 세션 캡처: 0장")
 
     def change_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "저장 폴더 선택", self.settings["save_folder"])
