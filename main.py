@@ -5,7 +5,6 @@ import os
 import threading
 import time
 from datetime import datetime
-import subprocess
 
 import ctypes
 try:
@@ -34,6 +33,9 @@ DEFAULT_FOLDER = r"D:\image_capture"
 
 class Signals(QObject):
     capture_update = pyqtSignal(int)
+    overlay_hide = pyqtSignal()
+    overlay_show = pyqtSignal()
+    do_flash = pyqtSignal()
 
 class HotkeyDialog(QDialog):
     def __init__(self, current_hotkey, parent=None):
@@ -83,6 +85,7 @@ class CaptureApp(QMainWindow):
         self.session_count = 0
         
         self.signals = Signals()
+        self._count_lock = threading.Lock()
         self.signals.capture_update.connect(self.update_count_ui)
 
         self.init_ui()
@@ -92,6 +95,9 @@ class CaptureApp(QMainWindow):
         self.overlay.settings_requested.connect(self.show_to_front)
         self.overlay.ontop_toggled.connect(self.ontop_cb.setChecked)
         self.overlay.exit_requested.connect(self.quit_app)
+        self.signals.overlay_hide.connect(self.overlay.hide)
+        self.signals.overlay_show.connect(self.overlay.show)
+        self.signals.do_flash.connect(self.overlay_flash)
         self.overlay.show()
         
         self.register_hotkey()
@@ -298,7 +304,7 @@ class CaptureApp(QMainWindow):
         self.save_settings()
 
     def toggle_ontop(self, state):
-        val = state == 2
+        val = Qt.CheckState(state) == Qt.CheckState.Checked
         self.settings["always_on_top"] = val
         self.overlay.set_always_on_top(val)
         self.save_settings()
@@ -334,7 +340,12 @@ class CaptureApp(QMainWindow):
         threading.Thread(target=self.do_capture, args=(bbox,), daemon=True).start()
 
     def do_capture(self, bbox):
+        img = None
         try:
+            # 테두리가 캡처 이미지에 포함되지 않도록 오버레이를 시그널로 숨김 (메인 스레드 안전)
+            self.signals.overlay_hide.emit()
+            time.sleep(0.05)  # OS 화면 렌더링 반영 대기
+
             with mss.mss() as sct:
                 monitor = {"top": bbox[1], "left": bbox[0], "width": bbox[2]-bbox[0], "height": bbox[3]-bbox[1]}
                 screenshot = sct.grab(monitor)
@@ -345,9 +356,10 @@ class CaptureApp(QMainWindow):
 
             template = self.settings.get("template", "image_{:03d}_HHMMSS.png")
             now = datetime.now()
-            count = self.session_count + 1
+            with self._count_lock:
+                count = self.session_count + 1
 
-            if "HHMMSS" in template and not "YYMMDD" in template:
+            if "HHMMSS" in template and "YYMMDD" not in template:
                 filename = f"image_{count:03d}_{now.strftime('%H%M%S')}.png"
             elif "YYMMDD" in template:
                 filename = f"capture_{now.strftime('%y%m%d_%H%M%S')}.png"
@@ -369,12 +381,17 @@ class CaptureApp(QMainWindow):
 
             img.save(final_path, quality=95 if fmt == "JPG" else None)
 
-            self.session_count += 1
-            self.signals.capture_update.emit(self.session_count)
-            QTimer.singleShot(0, self.overlay_flash)
+            with self._count_lock:
+                self.session_count += 1
+                current = self.session_count
+            self.signals.capture_update.emit(current)
+            self.signals.do_flash.emit()
 
-        except Exception as e:
+        except Exception:
             pass
+        finally:
+            # 예외 발생 여부와 관계없이 오버레이를 반드시 복원
+            self.signals.overlay_show.emit()
             
     def overlay_flash(self):
         old_color = self.overlay.border_color

@@ -1,4 +1,5 @@
 # overlay.py
+import math
 from PyQt6.QtWidgets import QWidget, QFrame, QHBoxLayout, QPushButton
 from PyQt6.QtCore import Qt, QRect, QPoint, pyqtSignal
 from PyQt6.QtGui import QPainter, QColor, QPen, QCursor
@@ -137,16 +138,18 @@ class OverlayWindow(QWidget):
         ratio = self.devicePixelRatioF()
         rect = self.geometry()
         t = self.border_thickness
+        # QPen은 선 너비의 절반을 안쪽으로 그리므로 ceil(t/2) + 1px 여유를 줘서 테두리가 캡처에 포함되지 않도록 함
+        inset = math.ceil(t / 2) + 1
         
         c_x = rect.x()
         c_y = rect.y() + self.toolbar_h
         c_w = rect.width()
         c_h = rect.height() - self.toolbar_h
         
-        x = int((c_x + t) * ratio)
-        y = int((c_y + t) * ratio)
-        w = int((c_w - 2 * t) * ratio)
-        h = int((c_h - 2 * t) * ratio)
+        x = int((c_x + inset) * ratio)
+        y = int((c_y + inset) * ratio)
+        w = int((c_w - 2 * inset) * ratio)
+        h = int((c_h - 2 * inset) * ratio)
         return (x, y, x + w, y + h)
 
     def paintEvent(self, event):
@@ -189,7 +192,7 @@ class OverlayWindow(QWidget):
             self.start_pos = event.globalPosition().toPoint()
             self.start_geometry = self.geometry()
             self.resize_dir = self.get_resize_dir(pos)
-            self.is_moving = getattr(self, "resize_dir", None) is None
+            self.is_moving = self.resize_dir is None
 
     def mouseMoveEvent(self, event):
         pos = event.position().toPoint()
